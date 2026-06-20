@@ -17,6 +17,15 @@ DATA_PATH = Path(os.environ.get("DATA_PATH", HERE / "smart_home_energy_consumpti
 ARTIFACT_DIR = Path(os.environ.get("ARTIFACT_DIR", HERE))
 
 
+def require_file(path: Path, label: str) -> None:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{label} not found at: {path}. "
+            "Place the CSV in this repo or set DATA_PATH env var."
+        )
+
+
+
 TARGET_COL_CANDIDATES = [
     "Energy Consumption (kWh)",
     "Energy Consumption(kWh)",
@@ -33,11 +42,16 @@ def find_target_col(df: pd.DataFrame) -> str:
 
 
 def main():
+    require_file(DATA_PATH, "Training dataset CSV")
     df = pd.read_csv(DATA_PATH)
     target_col = find_target_col(df)
 
+
     X = df.drop(columns=[target_col])
     y = df[target_col]
+
+    feature_columns = list(X.columns)
+
 
     # Identify numeric/categorical columns
     numeric_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
@@ -79,8 +93,25 @@ def main():
 
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     artifact_path = ARTIFACT_DIR / "energy_model.joblib"
-    joblib.dump({"pipeline": pipe, "target_col": target_col}, artifact_path)
+    payload = {
+        "pipeline": pipe,
+        "target_col": target_col,
+        "feature_columns": feature_columns,
+    }
+    joblib.dump(payload, artifact_path)
+
+    # Also write feature columns to JSON for transparency/debugging
+    feature_json_path = ARTIFACT_DIR / "feature_columns.json"
+    try:
+        import json
+
+        feature_json_path.write_text(json.dumps(feature_columns, indent=2), encoding="utf-8")
+    except Exception:
+        # Non-fatal: app can still rely on the joblib artifact
+        pass
+
     print(f"Saved artifact: {artifact_path}")
+
 
 
 
